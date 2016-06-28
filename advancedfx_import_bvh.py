@@ -268,16 +268,20 @@ def ReadFile(fileName, scale, camFov):
 
 def ImportCamera():
 	fileName, _ = QtGui.QFileDialog.getOpenFileName(None, "Open HLAE BVH File",  "", "HLAE BVH (*.bvh)")
+	if not 0 < len(fileName):
+		return
 	
 	oldTimelineMode = sfmApp.GetTimelineMode()
 	
-	sfmApp.SetTimelineMode(3) # Work around timeline bookmark update bug 1/2
+	try:
+		sfmApp.SetTimelineMode(3) # Work around timeline bookmark update bug 1/2
 	
-	if ReadFile(fileName, 1.0, 90.0):
-		print 'Done.'
-	else:
-		print 'FAILED';
+		if ReadFile(fileName, 1.0, 90.0):
+			print 'Done.'
+		else:
+			print 'FAILED'
 	
-	sfmApp.SetTimelineMode(oldTimelineMode)  # Work around timeline bookmark update bug 2/2
+	finally:
+		sfmApp.SetTimelineMode(oldTimelineMode)  # Work around timeline bookmark update bug 2/2
 
 ImportCamera()
