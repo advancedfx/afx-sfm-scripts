@@ -1,7 +1,7 @@
 # Copyright (c) advancedfx.org
 #
 # Last changes:
-# 2016-06-27 by dominik.matrixstorm.com
+# 2016-06-28 by dominik.matrixstorm.com
 #
 # First changes:
 # 2009-09-01 by dominik.matrixstorm.com
@@ -129,7 +129,27 @@ def ReadFrame(file, channels):
 	Yrot = float(line[channels[5]])
 	
 	return [Xpos, Ypos, Zpos, Zrot, Xrot, Yrot]
-	
+
+
+def ClearBookmarks(log, component, start, end):
+	idx = 0
+	while idx < log.GetNumBookmarks(component):
+		time = log.GetBookmarkTime(component, idx)
+		if(start <= time and time <= end):
+			log.RemoveBookmark(component, time)
+		else:
+			idx = idx + 1
+
+
+def ClearKeys(log, start, end):
+	idx = 0
+	while idx < log.GetKeyCount():
+		time = log.GetKeyTime(idx)
+		if(start <= time and time <= end):
+			log.RemoveKey(idx)
+		else:
+			idx = idx + 1
+
 
 def ReadFile(fileName, scale, camFov):
 	shot = sfm.GetCurrentShot()
@@ -141,7 +161,7 @@ def ReadFile(fileName, scale, camFov):
 		SetError("Selected animation set does not have channels clip.")
 		return False
 	
-	rootControlGroup = animSet.GetRootControlGroup();
+	rootControlGroup = animSet.GetRootControlGroup()
 
 	if None == rootControlGroup:
 		SetError("Selected animation set does not have rootControlGroup.")
@@ -184,15 +204,19 @@ def ReadFile(fileName, scale, camFov):
 		SetError('Failed parsing Frame Time.')
 		return False
 		
-	# Prepare curves
-	positionChan.log.ClearKeys()
-	positionChan.log.RemoveAllBookmarks(0)
-	positionChan.log.RemoveAllBookmarks(1)
-	positionChan.log.RemoveAllBookmarks(2)
-	orientationChan.log.ClearKeys()
-	orientationChan.log.RemoveAllBookmarks(0)
-	orientationChan.log.RemoveAllBookmarks(1)
-	orientationChan.log.RemoveAllBookmarks(2)
+	timeOffset = (shot.ToChildMediaTime(vs.DmeTime_t(sfmApp.GetHeadTimeInSeconds()),False) -channelsClip.timeFrame.start.GetValue())
+		
+	# Prepare curves:
+	timeStart = timeOffset
+	timeEnd = vs.DmeTime_t(float(frameTime) * float(frames)) +timeOffset
+	ClearKeys(positionChan.log,timeStart,timeEnd)
+	ClearBookmarks(positionChan.log,0,timeStart,timeEnd)
+	ClearBookmarks(positionChan.log,1,timeStart,timeEnd)
+	ClearBookmarks(positionChan.log,2,timeStart,timeEnd)
+	ClearKeys(orientationChan.log,timeStart,timeEnd)
+	ClearBookmarks(orientationChan.log,0,timeStart,timeEnd)
+	ClearBookmarks(orientationChan.log,1,timeStart,timeEnd)
+	ClearBookmarks(orientationChan.log,2,timeStart,timeEnd)
 	
 	frameCount = float(0)
 	
@@ -205,8 +229,7 @@ def ReadFile(fileName, scale, camFov):
 		
 		frameCount += 1
 		
-		#channelsClip.timeFrame.start.GetValue() +
-		BTT = vs.DmeTime_t(float(frameTime) * float(frameCount-1))
+		BTT = vs.DmeTime_t(float(frameTime) * float(frameCount-1)) +timeOffset
 
 		BYP = -frame[0] *scale
 		BZP =  frame[1] *scale
@@ -228,9 +251,7 @@ def ReadFile(fileName, scale, camFov):
 		if lastQuat:
 			dp = vs.QuaternionDotProduct(lastQuat,quat)
 			if dp < 0:
-				quat2 = vs.Quaternion()
-				vs.QuaternionScale(quat,-1.0,quat2)
-				quat = quat2
+				quat = vs.Quaternion(-quat.x,-quat.y,-quat.z,-quat.w)
 		
 		lastQuat = quat
 		
