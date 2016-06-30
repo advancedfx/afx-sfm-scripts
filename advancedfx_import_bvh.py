@@ -1,7 +1,7 @@
 # Copyright (c) advancedfx.org
 #
 # Last changes:
-# 2016-06-28 by dominik.matrixstorm.com
+# 2016-06-29 by dominik.matrixstorm.com
 #
 # First changes:
 # 2009-09-01 by dominik.matrixstorm.com
@@ -266,22 +266,59 @@ def ReadFile(fileName, scale, camFov):
 	
 	return True
 
+def GetSnapButtons():
+	snap = None
+	snapFrame = None
+	for x in sfmApp.GetMainWindow().findChildren(QtGui.QToolButton):
+		toolTip = x.toolTip()
+		if "Snap" == toolTip:
+			snap = x
+		else:
+			if "Snap Frame" == toolTip:
+				snapFrame = x
+	
+	return snap, snapFrame
+
 def ImportCamera():
 	fileName, _ = QtGui.QFileDialog.getOpenFileName(None, "Open HLAE BVH File",  "", "HLAE BVH (*.bvh)")
 	if not 0 < len(fileName):
 		return
 	
 	oldTimelineMode = sfmApp.GetTimelineMode()
+
+	snap, snapFrame = GetSnapButtons()
+
+	snapChecked = snap.isChecked()
+	snapFrameChecked = snapFrame.isChecked()
 	
 	try:
-		sfmApp.SetTimelineMode(3) # Work around timeline bookmark update bug 1/2
-	
+		sfmApp.SetTimelineMode(3) # Work around timeline bookmark update bug (can't be in Graph Editor or it won't update)
+		
+		# Work around bug/feature causing programatically inserted keyframes to be snapped:
+		if(snapChecked):
+			snap.click()
+		if(snapFrameChecked):
+			snapFrame.click()
+			
 		if ReadFile(fileName, 1.0, 90.0):
 			print 'Done.'
 		else:
 			print 'FAILED'
 	
 	finally:
-		sfmApp.SetTimelineMode(oldTimelineMode)  # Work around timeline bookmark update bug 2/2
+		checked = ""
+		if(snapFrameChecked):
+			#snapFrame.click() # if we unheck here it will still snap ...
+			checked = "'Snap Frame'"
+		if(snapChecked):
+			#snap.click() # if we uncheck here it will still snap ...
+			if 0 < len(checked):
+				checked = " and " + checked
+			checked = "'Snap'" + checked
+		
+		if 0 < len(checked):
+			QtGui.QMessageBox.information( None, "Attention", "Had to un-push " + checked + " tool button in timeline! Push again (if wanted)." )
+		
+		sfmApp.SetTimelineMode(oldTimelineMode)
 
 ImportCamera()
