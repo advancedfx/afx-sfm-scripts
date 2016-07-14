@@ -30,9 +30,21 @@ How to use advancedfx_export_bvh:
 The FPS exported is determined by your project output FPS.
 
 
+How to use advancedfx_import_gameRecord:
+
+This is still in the making, sorry.
+
+
 
 
 Changelog:
+
+1.x.x (2016-07-14T18:16Z):
+ - advancedfx_import_gameRecord:
+   - First version
+ - advancedfx_import_bvh:
+   - Does not create bookmarks for keys anymore, in order to save memory
+     (you can add and edit bookmarks manually).
 
 1.0.1 (2016-06-30T19:10Z):
  - advancedfx_import_bvh:

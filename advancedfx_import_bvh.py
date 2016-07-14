@@ -1,7 +1,7 @@
 # Copyright (c) advancedfx.org
 #
 # Last changes:
-# 2016-06-29 by dominik.matrixstorm.com
+# 2016-07-14 by dominik.matrixstorm.com
 #
 # First changes:
 # 2009-09-01 by dominik.matrixstorm.com
@@ -240,9 +240,9 @@ def ReadFile(fileName, scale, camFov):
 		BYR =  frame[5]
 		
 		positionChan.log.SetKey(BTT, vs.Vector(BXP, BYP, BZP))
-		positionChan.log.AddBookmark(BTT, 0)
-		positionChan.log.AddBookmark(BTT, 1)
-		positionChan.log.AddBookmark(BTT, 2)
+		# positionChan.log.AddBookmark(BTT, 0) # We cannot afford bookmarks (waste of memory)
+		# positionChan.log.AddBookmark(BTT, 1) # We cannot afford bookmarks (waste of memory)
+		# positionChan.log.AddBookmark(BTT, 2) # We cannot afford bookmarks (waste of memory)
 		
 		quat = vs.Quaternion()
 		vs.AngleQuaternion(vs.QAngle(BXR,BYR,BZR), quat)
@@ -256,9 +256,9 @@ def ReadFile(fileName, scale, camFov):
 		lastQuat = quat
 		
 		orientationChan.log.SetKey(BTT, quat)
-		orientationChan.log.AddBookmark(BTT, 0)
-		orientationChan.log.AddBookmark(BTT, 1)
-		orientationChan.log.AddBookmark(BTT, 2)
+		# orientationChan.log.AddBookmark(BTT, 0) # We cannot afford bookmarks (waste of memory)
+		# orientationChan.log.AddBookmark(BTT, 1) # We cannot afford bookmarks (waste of memory)
+		# orientationChan.log.AddBookmark(BTT, 2) # We cannot afford bookmarks (waste of memory)
 	
 	if not frameCount == frames:
 		SetError("Frames are missing in BVH file.")
