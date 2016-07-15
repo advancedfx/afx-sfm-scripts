@@ -1,7 +1,7 @@
 # Copyright (c) advancedfx.org
 #
 # Last changes:
-# 2016-07-14 by dominik.matrixstorm.com
+# 2016-07-15 by dominik.matrixstorm.com
 #
 # First changes:
 # 2016-07-13 by dominik.matrixstorm.com
@@ -244,6 +244,7 @@ def ReadFile(fileName):
 		
 		dict = AgrDictionary()
 		channelCache = ChannelCache()
+		knownHandleToDagName = {}
 		
 		stupidCount = 0
 		
@@ -252,6 +253,20 @@ def ReadFile(fileName):
 			
 			if node0 is None:
 				break
+				
+			elif 'deleted' == node0:
+				handle = ReadInt(file)
+				time = ReadDouble(file)
+				
+				dagName = knownHandleToDagName.get(handle, None)
+				if dagName is not None:
+					# Make removed ent invisible:
+					sfm.UsingAnimationSet(dagName)
+					dagAnimSet = sfm.GetCurrentAnimationSet()
+					channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
+					time = time -firstTime
+					time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
+					MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, False)
 			
 			elif 'entity_state' == node0:
 				stupidCount = stupidCount +1
@@ -273,11 +288,22 @@ def ReadFile(fileName):
 					time = ReadDouble(file) if dict.Peekaboo(file, 'time') else None
 					if None == firstTime:
 						firstTime = time
-					time = time -firstTime
+					time = vs.DmeTime_t(time -firstTime)
 					
 					modelName = dict.Read(file) if dict.Peekaboo(file, 'modelName') else None
 					
+					dagName = knownHandleToDagName.get(handle, None)
+					if dagName is not None:
+						# Switched model, make old model invisible:
+						sfm.UsingAnimationSet(dagName)
+						dagAnimSet = sfm.GetCurrentAnimationSet()
+						channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
+						rtime = time -channelsClip.timeFrame.start.GetValue()
+						MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', rtime, False)
+					
 					dagName = "afx/" + modelName + "/" +str(handle)
+					
+					knownHandleToDagName[handle] = dagName
 					
 					sfm.ClearSelection()
 					sfm.Select(dagName+':rootTransform')
@@ -298,7 +324,7 @@ def ReadFile(fileName):
 					
 					channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
 					
-					time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
+					time = time -channelsClip.timeFrame.start.GetValue()
 						
 					visible = ReadBool(file) if dict.Peekaboo(file, 'visible') else None
 					

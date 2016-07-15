@@ -65,8 +65,7 @@ Notes:
 In the current version keyframes will only be created when the
 gameModel is visible, otherwise we save some memory.
 
-Currently this feature is meant only to import player models
-and their animations (no rag dolls etc.).
+Currently this feature is mainly meant to import player models.
 It will import some viewmodels too, however those
 might be missing arms or have the Error model in SFM, due to being
 a custom (skin) model (modelName is '?' then).
@@ -74,6 +73,11 @@ a custom (skin) model (modelName is '?' then).
 
 
 Changelog:
+
+1.2.0 (2016-07-15T13:37Z):
+ - advancedfx_import_bvh:
+   - Improved for AfxHookSource 1.6.0, now handles entity delete envents
+     properly and model switching.
 
 1.1.0 (2016-07-15T13:37Z):
  - advancedfx_import_gameRecord:
