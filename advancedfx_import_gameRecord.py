@@ -15,31 +15,67 @@ import sfm;
 import sfmUtils;
 import sfmApp;
 from PySide import QtGui
-import xml.etree.ElementTree as ET
-import ctypes
+import gc
+import struct
 
 def SetError(error):
 	print 'ERROR:', error
 	QtGui.QMessageBox.warning( None, "ERROR:", error )
+	
+# <remarks>Slow as fuck!</remarks>
+def FindChannel(channels,name):
+	for i in channels:
+		if name == i.GetName():
+			return i
+	return None
 
 def InitalizeAnimSet(animSet):
-	controls = animSet.controls
-	for ctrl in controls:
-		if isinstance(ctrl,vs.CDmeTransformControl):
-			ctrl.GetPositionChannel().ClearLog()
-			ctrl.GetOrientationChannel().ClearLog()
+	shot = sfm.GetCurrentShot()
 
-def MakeKeyFrameTransform(animSet,controlName,time,vec,quat,shortestPath=False):
-	rootControlGroup = animSet.GetRootControlGroup()
+	channelsClip = sfmUtils.GetChannelsClipForAnimSet(animSet, shot)
 	
-	control = rootControlGroup.FindControlByName(controlName, True)
-	positionChan = control.GetPositionChannel()
-	orientationChan = control.GetOrientationChannel()
+	# Ensure additional channels:
+	visibleChannel = FindChannel(channelsClip.channels,'visible_channel')
+	if visibleChannel is None:
+		visibleChannel = sfmUtils.CreateControlAndChannel('visible', vs.AT_BOOL, False, animSet, shot).channel
+		visibleChannel.mode = 3
+		visibleChannel.fromElement = animSet.gameModel
+		visibleChannel.fromAttribute = 'visible'
+		visibleChannel.toElement = animSet.gameModel
+		visibleChannel.toAttribute = 'visible'
+	
+	# clear channel logs:
+	for chan in channelsClip.channels:
+		chan.ClearLog()
+	
+	# Not visible initially:
+	visibleChannel.log.SetKey(-channelsClip.timeFrame.start.GetValue(), False)
+
+class ChannelCache:
+	dict = {}
+	
+	def GetChannel(self,animSet,channelName):
+		key = animSet.GetName() + channelName
+		value = self.dict.get(key, False)
+		if False == value:
+			channelsClip = sfmUtils.GetChannelsClipForAnimSet(animSet, sfm.GetCurrentShot())
+			value = FindChannel(channelsClip.channels, channelName)
+			self.dict[key] = value
+			
+		return value
+		
+def MakeKeyFrameValue(channelCache,animSet,channelName,time,value):
+	chan = channelCache.GetChannel(animSet, channelName)
+	chan.log.SetKey(time, value)
+
+def MakeKeyFrameTransform(channelCache,animSet,channelName,time,vec,quat,shortestPath=False):
+	positionChan = channelCache.GetChannel(animSet, channelName+'_p')
+	orientationChan = channelCache.GetChannel(animSet, channelName+'_o')
 	
 	positionChan.log.SetKey(time, vec)
-	#positionChan.log.AddBookmark(time, 0) # We cannot afford bookmarks (waste of memory)
-	#positionChan.log.AddBookmark(time, 1) # We cannot afford bookmarks (waste of memory)
-	#positionChan.log.AddBookmark(time, 2) # We cannot afford bookmarks (waste of memory)
+	# positionChan.log.AddBookmark(time, 0) # We cannot afford bookmarks (waste of memory)
+	# positionChan.log.AddBookmark(time, 1) # We cannot afford bookmarks (waste of memory)
+	# positionChan.log.AddBookmark(time, 2) # We cannot afford bookmarks (waste of memory)
 	
 	if(shortestPath):
 		# Make sure we travel the short way:
@@ -68,94 +104,259 @@ def Quaternion(x,y,z,w):
 	quat.w = w
 	return quat
 
+def ReadString(file):
+	buf = bytearray()
+	while True:
+		b = file.read(1)
+		if len(b) < 1:
+			return None
+		elif b == '\0':
+			return str(buf)
+		else:
+			buf.append(b)
+
+def ReadBool(file):
+	buf = file.read(1)
+	if(len(buf) < 1):
+		return None
+	return struct.unpack('?', buf)[0]
+
+def ReadInt(file):
+	buf = file.read(4)
+	if(len(buf) < 4):
+		return None
+	return struct.unpack('i', buf)[0]
+
+def ReadDouble(file):
+	buf = file.read(8)
+	if(len(buf) < 8):
+		return None
+	return struct.unpack('d', buf)[0]
+	
+def ReadVector(file):
+	x = ReadDouble(file)
+	if x is None:
+		return None
+	y = ReadDouble(file)
+	if y is None:
+		return None
+	z = ReadDouble(file)
+	if z is None:
+		return None
+	
+	return vs.Vector(x,y,z)
+
+def ReadQAngle(file):
+	x = ReadDouble(file)
+	if x is None:
+		return None
+	y = ReadDouble(file)
+	if y is None:
+		return None
+	z = ReadDouble(file)
+	if z is None:
+		return None
+	
+	return vs.QAngle(x,y,z)
+
+def ReadQuaternion(file):
+	x = ReadDouble(file)
+	if x is None:
+		return None
+	y = ReadDouble(file)
+	if y is None:
+		return None
+	z = ReadDouble(file)
+	if z is None:
+		return None
+	w = ReadDouble(file)
+	if w is None:
+		return None
+	
+	return vs.Quaternion(x,y,z,w)
+
+def ReadAgrVersion(file):
+	buf = file.read(14)
+	if len(buf) < 14:
+		return None
+	
+	cmp = 'afxGameRecord\0'
+	
+	if buf != cmp:
+		return None
+	
+	return ReadInt(file)
+
+class AgrDictionary:
+	dict = {}
+	peeked = None
+	
+	def Read(self,file):
+		if self.peeked is not None:
+			oldPeeked = self.peeked
+			self.peeked = None
+			return oldPeeked
+		
+		idx = ReadInt(file)
+		
+		if idx is None:
+			return None
+		
+		if -1 == idx:
+			str = ReadString(file)
+			if str is None:
+				return None
+			self.dict[len(self.dict)] = str
+			return str
+			
+		return self.dict[idx]
+		
+	def Peekaboo(self,file,what):
+		if self.peeked is None:
+			self.peeked = self.Read(file)
+			
+		if(what == self.peeked):
+			self.peeked = None
+			return True
+		
+		return False
 
 def ReadFile(fileName):
-	shot = sfm.GetCurrentShot()
+	file	 = None
 	
-	tree = ET.parse(fileName)
-	root = tree.getroot()
-	
-	firstTime = None
-	
-	knownAnimSetNames = set()
-	
-	for entity_state in root.findall('entity_state'):
-		time = None
-		dagName = None
-		dagAnimSet = None
-		handle = int(entity_state.get('handle'))
-		viewModel = bool(entity_state.get('viewmodel'))
-		baseentity = entity_state.find('baseentity')
-		if(None != baseentity):
-			time = float(baseentity.get('time'))
-			if None == firstTime:
-				firstTime = time
-			time = time -firstTime
-			
-			modelName = baseentity.get('modelName')
-			
-			dagName = "afx/" + modelName + "/" +str(handle)
-			
-			sfm.ClearSelection()
-			sfm.Select(dagName+':rootTransform')
-			dagRootTransform = sfm.FirstSelectedDag()
-			if(None == dagRootTransform):
-				dagAnimSet = sfmUtils.CreateModelAnimationSet(dagName,modelName)
-				sfm.ClearSelection()
-				sfm.Select(dagName+":rootTransform")
-				dagRootTransform = sfm.FirstSelectedDag()
-			else:
-				sfm.UsingAnimationSet(dagName)
-				dagAnimSet = sfm.GetCurrentAnimationSet()
-			
-			if dagName not in knownAnimSetNames:
-				print "Initalizing animSet " + dagName
-				InitalizeAnimSet(dagAnimSet)
-				knownAnimSetNames.add(dagName)
-			
-			channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
-			
-			time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
-				
-			visbile = bool(baseentity.get('visible'))
-			
-			xRenderOrigin = baseentity.find('renderOrigin')
-			renderOrigin = vs.Vector(float(xRenderOrigin.get('x')), float(xRenderOrigin.get('y')), float(xRenderOrigin.get('z')))
-			
-			xRenderAngles = baseentity.find('renderAngles')
-			renderAngles = vs.QAngle(float(xRenderAngles.get('x')), float(xRenderAngles.get('y')), float(xRenderAngles.get('z')))
-			
-			MakeKeyFrameTransform(dagAnimSet, "rootTransform", time, renderOrigin, QuaternionFromQAngle(renderAngles), True)
+	try:
+		file = open(fileName, 'rb')
 		
-		baseanimating = entity_state.find('baseanimating')
-		if(None != dagAnimSet and None != baseanimating):
-			skin = int(baseanimating.get('skin'))
-			body = int(baseanimating.get('body'))
-			sequence = int(baseanimating.get('sequence'))
-			boneList  = baseanimating.find('boneList')
-			if(None != boneList and hasattr(dagAnimSet,'gameModel')):
-				dagModel = dagAnimSet.gameModel
-				for b in boneList.findall('b'):
-					i = int(b.get('i'))
-					x = float(b.get('x'))
-					y = float(b.get('y'))
-					z = float(b.get('z'))
-					qx = float(b.get('qx'))
-					qy = float(b.get('qy'))
-					qz = float(b.get('qz'))
-					qw = float(b.get('qw'))
+		version = ReadAgrVersion(file)
+		
+		if version is None:
+			SetError('Invalid file format.')
+			return False
+			
+		if 0 != version:
+			SetError('Version '+str(version)+' is not supported!')
+
+		shot = sfm.GetCurrentShot()
+		
+		firstTime = None
+		
+		knownAnimSetNames = set()
+		
+		dict = AgrDictionary()
+		channelCache = ChannelCache()
+		
+		stupidCount = 0
+		
+		while True:
+			node0 = dict.Read(file)
+			
+			if node0 is None:
+				break
+			
+			elif 'entity_state' == node0:
+				stupidCount = stupidCount +1
+				
+				if 4096 <= stupidCount:
+					stupidCount = 0
+					gc.collect()
+					#break
+					#reply = QtGui.QMessageBox.question(None, 'Message', 'Imported another 4096 packets - Continue?', QtGui.QMessageBox.Yes, QtGui.QMessageBox.No)
+					#if reply == QtGui.QMessageBox.No:
+					#	break
+				
+				visible = None
+				time = None
+				dagName = None
+				dagAnimSet = None
+				handle = ReadInt(file) if dict.Peekaboo(file,'handle') else None
+				if dict.Peekaboo(file,'baseentity'):
+					time = ReadDouble(file) if dict.Peekaboo(file, 'time') else None
+					if None == firstTime:
+						firstTime = time
+					time = time -firstTime
 					
-					if(qx == 0 and qy == 0 and qz == 0 and qw == 0):
-						# The fuq?
-						qw = float(1)
+					modelName = dict.Read(file) if dict.Peekaboo(file, 'modelName') else None
 					
-					if(i < len(dagModel.bones)):
-						name = dagModel.bones[i].GetName()
+					dagName = "afx/" + modelName + "/" +str(handle)
+					
+					sfm.ClearSelection()
+					sfm.Select(dagName+':rootTransform')
+					dagRootTransform = sfm.FirstSelectedDag()
+					if(None == dagRootTransform):
+						dagAnimSet = sfmUtils.CreateModelAnimationSet(dagName,modelName)
+						sfm.ClearSelection()
+						sfm.Select(dagName+":rootTransform")
+						dagRootTransform = sfm.FirstSelectedDag()
+					else:
+						sfm.UsingAnimationSet(dagName)
+						dagAnimSet = sfm.GetCurrentAnimationSet()
+					
+					if dagName not in knownAnimSetNames:
+						print "Initalizing animSet " + dagName
+						InitalizeAnimSet(dagAnimSet)
+						knownAnimSetNames.add(dagName)
+					
+					channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
+					
+					time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
 						
-						name = name[name.find('(')+1:]
-						name = name[:name.find(')')]
+					visible = ReadBool(file) if dict.Peekaboo(file, 'visible') else None
+					
+					MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, visible)
+					
+					renderOrigin = ReadVector(file) if dict.Peekaboo(file, 'renderOrigin') else None
+					renderAngles = ReadQAngle(file) if dict.Peekaboo(file, 'renderAngles') else None
+					
+					if True == visible:
+						# Only key-frame if visible
+						MakeKeyFrameTransform(channelCache, dagAnimSet, "rootTransform", time, renderOrigin, QuaternionFromQAngle(renderAngles), True)
+					
+					dict.Peekaboo(file,'/')
+				
+				if (dagAnimSet is not None) and dict.Peekaboo(file,'baseanimating'):
+					skin = ReadInt(file) if dict.Peekaboo(file,'skin') else None
+					body = ReadInt(file) if dict.Peekaboo(file,'body') else None
+					sequence  = ReadInt(file) if dict.Peekaboo(file,'sequence') else None
+					if dict.Peekaboo(file,'boneList'):
+						dagModel = None
+						if hasattr(dagAnimSet,'gameModel'):
+							dagModel = dagAnimSet.gameModel
 						
-						MakeKeyFrameTransform(dagAnimSet, name, time, vs.Vector(x,y,z), Quaternion(qx,qy,qz,qw))
+						numBones = ReadInt(file)
+						
+						#print "bones" + str(numBones)
+						
+						for i in xrange(numBones):
+							vec = ReadVector(file)
+							quat = ReadQuaternion(file)
+							
+							if dagModel is None:
+								continue
+							
+							if(i < len(dagModel.bones)):
+								name = dagModel.bones[i].GetName()
+								#print name
+								
+								name = name[name.find('(')+1:]
+								name = name[:name.find(')')]
+								#print name
+								
+								if True == visible:
+									# Only key-frame if visible
+									MakeKeyFrameTransform(channelCache, dagAnimSet, name, time, vec, quat)
+					
+					dict.Peekaboo(file,'/')
+				
+				viewModel = ReadBool(file) if dict.Peekaboo(file,'viewmodel') else None
+				
+				dict.Peekaboo(file,'/')
+			
+			else:
+				SetError('Unknown packet')
+				return False
+	finally:
+		if file is not None:
+			file.close()
 	
 	return True
 
@@ -173,7 +374,7 @@ def GetSnapButtons():
 	return snap, snapFrame
 
 def ImportGameRecord():
-	fileName, _ = QtGui.QFileDialog.getOpenFileName(None, "Open HLAE GameRecord File",  "", "HLAE GameRecord (*.xml)")
+	fileName, _ = QtGui.QFileDialog.getOpenFileName(None, "Open HLAE GameRecord File",  "", "afxGameRecord (*.agr)")
 	if not 0 < len(fileName):
 		return
 	
@@ -185,6 +386,8 @@ def ImportGameRecord():
 	snapFrameChecked = snapFrame.isChecked()
 	
 	try:
+		gc.collect() # Free memory, since we need much of it
+		
 		#sfm.SetOperationMode("Record")
 		sfmApp.SetTimelineMode(3) # Work around timeline bookmark update bug (can't be in Graph Editor or it won't update)
 		
@@ -200,6 +403,8 @@ def ImportGameRecord():
 			print 'FAILED'
 			
 	finally:
+		gc.collect() # Free memory, since we needed much of it
+	
 		checked = ""
 		if(snapFrameChecked):
 			#snapFrame.click() # if we unheck here it will still snap ...

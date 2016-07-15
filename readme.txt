@@ -4,6 +4,8 @@ Place the *.py files
 in the "SourceFilmmaker\game\platform\scripts\sfm\animset" folder.
 
 
+
+
 How to use advancedfx_import_bvh:
 
 1. Edit a clip
@@ -21,6 +23,8 @@ Also be aware that CS:GO actually uses an higher FOV than you set in-game:
 http://advancedfx.style-productions.net/forum/viewtopic.php?f=17&t=1811
 
 
+
+
 How to use advancedfx_export_bvh:
 
 1. Select a clip
@@ -30,16 +34,48 @@ How to use advancedfx_export_bvh:
 The FPS exported is determined by your project output FPS.
 
 
+
+
 How to use advancedfx_import_gameRecord:
 
-This is still in the making, sorry.
+Create an afxGameRecording in HLAE / AfxHookSource, preferably with
+low FPS / host_framerate (i.e. 30) and not too long,
+because otherwise you will run out of memory upon importing
+into SFM!
+You can do that using the "mirv_streams record agr" command in HLAE /
+AfxHookSource.
 
+To import the recording in SFM:
+
+1. Create an dummy animation set (i.e. camera) on the clip where you want to
+   import
+2. Right click the created set and in Animation Set Editor and
+   select Rig -> advancedfx_import_gameRecord
+
+Attention:
+
+Automatic importing of faulty / broken models (i.e. from the
+models\player\custom_player\legacy folder, which is used in older de_cache
+demos for example) will cause memory
+corruptions that usually lead to a crash of SFM.
+To avoid those crashes, don't make such models available to SFM!
+
+Notes:
+
+In the current version keyframes will only be created when the
+gameModel is visible, otherwise we save some memory.
+
+Currently this feature is meant only to import player models
+and their animations (no rag dolls etc.).
+It will import some viewmodels too, however those
+might be missing arms or have the Error model in SFM, due to being
+a custom (skin) model (modelName is '?' then).
 
 
 
 Changelog:
 
-1.x.x (2016-07-14T18:16Z):
+1.1.0 (2016-07-15T13:37Z):
  - advancedfx_import_gameRecord:
    - First version
  - advancedfx_import_bvh:
