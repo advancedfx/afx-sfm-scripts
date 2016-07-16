@@ -1,7 +1,7 @@
 # Copyright (c) advancedfx.org
 #
 # Last changes:
-# 2016-07-15 by dominik.matrixstorm.com
+# 2016-07-16 by dominik.matrixstorm.com
 #
 # First changes:
 # 2016-07-13 by dominik.matrixstorm.com
@@ -310,6 +310,8 @@ def ReadFile(fileName):
 					dagRootTransform = sfm.FirstSelectedDag()
 					if(None == dagRootTransform):
 						dagAnimSet = sfmUtils.CreateModelAnimationSet(dagName,modelName)
+						if(hasattr(dagAnimSet,'gameModel')):
+							dagAnimSet.gameModel.evaluateProceduralBones = False # This will look awkwardly and crash SFM otherwise
 						sfm.ClearSelection()
 						sfm.Select(dagName+":rootTransform")
 						dagRootTransform = sfm.FirstSelectedDag()
