@@ -74,14 +74,18 @@ a custom (skin) model (modelName is '?' then).
 
 Changelog:
 
+1.3.0 (2017-06-26T05:07Z):
+ - advancedfx_import_gameRecord:
+   - Updated to agr version 1
+
 1.2.1 (2016-07-16T10:43Z):
- - advancedfx_import_bvh:
+ - advancedfx_import_gameRecord:
    - Now sets gameModel.evaluateProceduralBones = False, to avoid player
      models wrapping and hopefully also avoid crashing SFM (this is
      relevant for demos using the new models in 
 
 1.2.0 (2016-07-15T13:37Z):
- - advancedfx_import_bvh:
+ - advancedfx_import_gameRecord:
    - Improved for AfxHookSource 1.6.0, now handles entity delete envents
      properly and model switching.
 
