@@ -74,6 +74,10 @@ a custom (skin) model (modelName is '?' then).
 
 Changelog:
 
+1.4.0 (2017-08-02T18:32Z):
+ - advancedfx_import_gameRecord:
+   - Updated to agr version 2 (also bug fixes)
+
 1.3.0 (2017-06-26T05:07Z):
  - advancedfx_import_gameRecord:
    - Updated to agr version 1

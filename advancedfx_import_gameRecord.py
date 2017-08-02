@@ -1,10 +1,10 @@
 # Copyright (c) advancedfx.org
 #
 # Last changes:
-# 2017-06-26 by dominik.matrixstorm.com
+# 2017-08-02 dominik.matrixstorm.com
 #
 # First changes:
-# 2016-07-13 by dominik.matrixstorm.com
+# 2016-07-13 dominik.matrixstorm.com
 
 
 # DEG2RAD = 0.0174532925199432957692369076849
@@ -270,6 +270,19 @@ def ReadAgrVersion(file):
 	
 	return ReadInt(file)
 
+class ModelHandle:
+	def __init__(self,objNr,handle,modelName):
+		self.objNr = objNr
+		self.handle = handle
+		self.modelName = modelName
+		self.modelData = False
+
+	def __hash__(self):
+		return hash((self.handle, self.modelName))
+
+	def __eq__(self, other):
+		return (self.handle, self.modelName) == (other.handle, other.modelName)
+
 class AgrDictionary:
 	dict = {}
 	peeked = None
@@ -316,7 +329,7 @@ def ReadFile(fileName):
 			SetError('Invalid file format.')
 			return False
 			
-		if 1 != version:
+		if 2 != version:
 			SetError('Version '+str(version)+' is not supported!')
 			return False
 
@@ -324,15 +337,15 @@ def ReadFile(fileName):
 		
 		firstTime = None
 		
-		knownAnimSetNames = set()
-		
 		dict = AgrDictionary()
+		handleToLastModelHandle = {}
 		channelCache = ChannelCache()
-		knownHandleToDagName = {}
 		
 		stupidCount = 0
 		
 		afxCam = None
+		
+		objNr = 0
 		
 		while True:
 			stupidCount = stupidCount +1
@@ -350,24 +363,37 @@ def ReadFile(fileName):
 			if node0 is None:
 				break
 				
+			elif 'afxHidden' == node0:
+				handle = ReadInt(file)
+				time = ReadFloat(file)
+				
+				modelHandle = handleToLastModelHandle.get(handle, None)
+				if modelHandle is not None:
+					dagAnimSet = modelHandle.modelData
+					if dagAnimSet:
+						# Make ent invisible:
+						channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
+						time = time -firstTime
+						time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
+						MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, False)
+			
 			elif 'deleted' == node0:
 				handle = ReadInt(file)
 				time = ReadFloat(file)
 				
-				dagName = knownHandleToDagName.get(handle, None)
-				if dagName is not None:
-					# Make removed ent invisible:
-					sfm.UsingAnimationSet(dagName)
-					dagAnimSet = sfm.GetCurrentAnimationSet()
-					channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
-					time = time -firstTime
-					time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
-					MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, False)
+				modelHandle = handleToLastModelHandle.pop(handle, None)
+				if modelHandle is not None:
+					dagAnimSet = modelHandle.modelData
+					if dagAnimSet:
+						# Make removed ent invisible:
+						channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
+						time = time -firstTime
+						time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
+						MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, False)
 			
 			elif 'entity_state' == node0:
 				visible = None
 				time = None
-				dagName = None
 				dagAnimSet = None
 				handle = ReadInt(file)
 				if dict.Peekaboo(file,'baseentity'):
@@ -378,43 +404,46 @@ def ReadFile(fileName):
 					
 					modelName = dict.Read(file)
 					
-					dagName = knownHandleToDagName.get(handle, None)
-					if dagName is not None:
+					modelHandle = handleToLastModelHandle.get(handle, None)
+					
+					if (modelHandle is not None) and (modelHandle.modelName != modelName):
 						# Switched model, make old model invisible:
-						sfm.UsingAnimationSet(dagName)
-						dagAnimSet = sfm.GetCurrentAnimationSet()
-						channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
-						rtime = time -channelsClip.timeFrame.start.GetValue()
-						MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', rtime, False)
+						dagAnimSet = modelHandle.modelData
+						if dagAnimSet:
+							channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
+							rtime = time -channelsClip.timeFrame.start.GetValue()
+							MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', rtime, False)
+						
+						modelHandle = None
+						
+					if modelHandle is None:
+						objNr = objNr + 1
+						modelHandle = ModelHandle(objNr, handle, modelName)
+						handleToLastModelHandle[handle] = modelHandle
 					
-					dagName = "afx." +str(handle) + " " + modelName
-					
-					knownHandleToDagName[handle] = dagName
-					
-					sfm.ClearSelection()
-					sfm.Select(dagName+':rootTransform')
-					dagRootTransform = sfm.FirstSelectedDag()
-					if(None == dagRootTransform):
+					dagAnimSet = modelHandle.modelData
+					if dagAnimSet is False:
+						# We have not tried to import the model for this (new) handle yet, so try to import it:
+						dagName = modelName.rsplit('/',1)
+						dagName = dagName[len(dagName) -1]
+						dagName = (dagName[:60] + '..') if len(dagName) > 60 else dagName
+						dagName = "afx." +str(modelHandle.objNr)+"."+str(modelHandle.handle)+ " " + dagName
+						
 						dagAnimSet = sfmUtils.CreateModelAnimationSet(dagName,modelName)
+						
 						if(hasattr(dagAnimSet,'gameModel')):
 							dagAnimSet.gameModel.evaluateProceduralBones = False # This will look awkwardly and crash SFM otherwise
-						sfm.ClearSelection()
-						sfm.Select(dagName+":rootTransform")
-						dagRootTransform = sfm.FirstSelectedDag()
-					else:
-						sfm.UsingAnimationSet(dagName)
-						dagAnimSet = sfm.GetCurrentAnimationSet()
-					
-					if dagName not in knownAnimSetNames:
+							
 						print "Initalizing animSet " + dagName
 						InitalizeAnimSet(dagAnimSet)
-						knownAnimSetNames.add(dagName)
+						
+						modelHandle.modelData = dagAnimSet
 					
 					channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
 					
 					time = time -channelsClip.timeFrame.start.GetValue()
 						
-					visible = ReadBool(file)
+					visible = True #visible = ReadBool(file)
 					
 					MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, visible)
 					
@@ -426,9 +455,9 @@ def ReadFile(fileName):
 						MakeKeyFrameTransform(channelCache, dagAnimSet, "rootTransform", time, renderOrigin, QuaternionFromQAngle(renderAngles), True)
 					
 				if dict.Peekaboo(file,'baseanimating'):
-					skin = ReadInt(file)
-					body = ReadInt(file)
-					sequence  = ReadInt(file)
+					#skin = ReadInt(file)
+					#body = ReadInt(file)
+					#sequence  = ReadInt(file)
 					hasBoneList = ReadBool(file)
 					if hasBoneList:
 						dagModel = None
