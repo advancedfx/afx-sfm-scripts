@@ -1,7 +1,7 @@
 # Copyright (c) advancedfx.org
 #
 # Last changes:
-# 2017-08-02 dominik.matrixstorm.com
+# 2017-09-14 dominik.matrixstorm.com
 #
 # First changes:
 # 2016-07-13 dominik.matrixstorm.com
@@ -109,66 +109,10 @@ def Quaternion(x,y,z,w):
 	quat.w = w
 	return quat
 	
-class BufferedFile:
-	def __init__(self,filePath):
-		self.b = bytearray(1048576)
-		self.index = 0
-		self.numread = 0
-		self.file = open(filePath, 'rb')
-		self.filePos = 0
-		if self.file:
-			self.file.seek(0, 2)
-			self.fileSize = self.file.tell()
-			self.file.seek(0, 0)
-		else:
-			self.fileSize = 0
-	
-	def Read(self,readBytes):
-		result = bytearray()
-
-		if self.file is None:
-			return result
-		
-		while 0 < readBytes:
-			bytesLeft = self.numread -self.index
-			bytesNow = min(bytesLeft, readBytes)
-			
-			if 0 >= bytesNow:
-				self.index = 0
-				self.numread = self.file.readinto(self.b)
-				if not self.numread:
-					return result
-				continue
-			
-			result += self.b[self.index : (self.index +bytesNow)]
-			self.index += bytesNow
-			self.filePos += bytesNow
-			readBytes -= bytesNow
-		
-		return result
-		
-	def FileSize(self):
-		if not self.file:
-			return None
-			
-		return self.fileSize
-		
-	def Tell(self):
-		if not self.file:
-			return None
-		
-		return self.filePos;
-		
-	
-	def Close(self):
-		if self.file is not None:
-			self.file.close();
-			self.file = None
-
 def ReadString(file):
 	buf = bytearray()
 	while True:
-		b = file.Read(1)
+		b = file.read(1)
 		if len(b) < 1:
 			return None
 		elif b == '\0':
@@ -177,28 +121,28 @@ def ReadString(file):
 			buf.append(b[0])
 
 def ReadBool(file):
-	buf = file.Read(1)
+	buf = file.read(1)
 	if(len(buf) < 1):
 		return None
-	return struct.unpack('?', buf)[0]
+	return struct.unpack('<?', buf)[0]
 
 def ReadInt(file):
-	buf = file.Read(4)
+	buf = file.read(4)
 	if(len(buf) < 4):
 		return None
-	return struct.unpack('i', buf)[0]
+	return struct.unpack('<i', buf)[0]
 	
 def ReadFloat(file):
-	buf = file.Read(4)
+	buf = file.read(4)
 	if(len(buf) < 4):
 		return None
-	return struct.unpack('f', buf)[0]
+	return struct.unpack('<f', buf)[0]
 
 def ReadDouble(file):
-	buf = file.Read(8)
+	buf = file.read(8)
 	if(len(buf) < 8):
 		return None
-	return struct.unpack('d', buf)[0]
+	return struct.unpack('<d', buf)[0]
 	
 def ReadVector(file):
 	x = ReadFloat(file)
@@ -259,33 +203,21 @@ def ReadQuaternion(file):
 	return vs.Quaternion(x,y,z,w)
 
 def ReadAgrVersion(file):
-	buf = file.Read(14)
+	buf = file.read(14)
 	if len(buf) < 14:
 		return None
 	
-	cmp = 'afxGameRecord\0'
+	cmp = b"afxGameRecord\0"
 	
 	if buf != cmp:
 		return None
 	
 	return ReadInt(file)
 
-class ModelHandle:
-	def __init__(self,objNr,handle,modelName):
-		self.objNr = objNr
-		self.handle = handle
-		self.modelName = modelName
-		self.modelData = False
-
-	def __hash__(self):
-		return hash((self.handle, self.modelName))
-
-	def __eq__(self, other):
-		return (self.handle, self.modelName) == (other.handle, other.modelName)
-
 class AgrDictionary:
-	dict = {}
-	peeked = None
+	def __init__(self):
+		self.dict = {}
+		self.peeked = None
 	
 	def Read(self,file):
 		if self.peeked is not None:
@@ -316,12 +248,43 @@ class AgrDictionary:
 			return True
 		
 		return False
+		
+class ModelHandle:
+	def __init__(self,objNr,modelName):
+		self.objNr = objNr
+		self.modelName = modelName
+		self.modelData = False
+		self.lastRenderOrigin = None
+#
+#	def __hash__(self):
+#		return hash((self.handle, self.modelName))
+#
+#	def __eq__(self, other):
+#		return (self.handle, self.modelName) == (other.handle, other.modelName)
+
+class AgrTimeConverter:
+	def __init__(self):
+		self.firstTime = None
+		
+	def Convert(self,time,channelsClip):
+		if self.firstTime is None:
+			self.firstTime = time
+		
+		time = time -self.firstTime
+		
+		time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
+		
+		return time
 
 def ReadFile(fileName):
 	file	 = None
 	
 	try:
-		file = BufferedFile(fileName)
+		file = open(fileName, 'rb')
+		
+		if file is None:
+			self.error('Could not open file.')
+			return False
 		
 		version = ReadAgrVersion(file)
 		
@@ -329,21 +292,21 @@ def ReadFile(fileName):
 			SetError('Invalid file format.')
 			return False
 			
-		if 2 != version:
+		if 3 != version:
 			SetError('Version '+str(version)+' is not supported!')
 			return False
 
 		shot = sfm.GetCurrentShot()
 		
-		firstTime = None
-		
+		timeConverter = AgrTimeConverter()
 		dict = AgrDictionary()
 		handleToLastModelHandle = {}
+		unusedModelHandles = []
+		
 		channelCache = ChannelCache()
+		afxCam = None
 		
 		stupidCount = 0
-		
-		afxCam = None
 		
 		objNr = 0
 		
@@ -360,23 +323,42 @@ def ReadFile(fileName):
 			
 			node0 = dict.Read(file)
 			
+			
 			if node0 is None:
 				break
 				
-			elif 'afxHidden' == node0:
-				handle = ReadInt(file)
-				time = ReadFloat(file)
+			elif 'afxHiddenOffset' == node0:
+				offset = ReadInt(file)
+				if offset:
+					curOffset = file.tell()
+					file.seek(offset -4, 1)
+					
+					time = ReadFloat(file)
+					numHidden = ReadInt(file)
+					for i in range(numHidden):
+						handle = ReadInt(file)
+						
+						modelHandle = handleToLastModelHandle.pop(handle, None)
+						if modelHandle is not None:
+							dagAnimSet = modelHandle.modelData
+							if dagAnimSet:
+								# Make ent invisible:
+								rtime = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot))
+								MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', rtime, False)
+							
+							unusedModelHandles.append(modelHandle)
+							#print("Marking %i (%s) as hidden/reusable." % (modelHandle.objNr,modelHandle.modelName))
+						
+					file.seek(curOffset,0)
 				
-				modelHandle = handleToLastModelHandle.get(handle, None)
-				if modelHandle is not None:
-					dagAnimSet = modelHandle.modelData
-					if dagAnimSet:
-						# Make ent invisible:
-						channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
-						time = time -firstTime
-						time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
-						MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, False)
-			
+			elif 'afxHidden' == node0:
+				# skipped, because will be handled earlier by afxHiddenOffset
+				
+				time = ReadFloat(file)
+				numHidden = ReadInt(file)
+				for i in range(numHidden):
+					handle = ReadInt(file)
+		
 			elif 'deleted' == node0:
 				handle = ReadInt(file)
 				time = ReadFloat(file)
@@ -386,10 +368,11 @@ def ReadFile(fileName):
 					dagAnimSet = modelHandle.modelData
 					if dagAnimSet:
 						# Make removed ent invisible:
-						channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
-						time = time -firstTime
-						time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
+						time = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot))
 						MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, False)
+						
+					unusedModelHandles.append(modelHandle)
+					print("Marking %i (%s) as hidden/reusable." % (modelHandle.objNr,modelHandle.modelName))
 			
 			elif 'entity_state' == node0:
 				visible = None
@@ -398,11 +381,13 @@ def ReadFile(fileName):
 				handle = ReadInt(file)
 				if dict.Peekaboo(file,'baseentity'):
 					time = ReadFloat(file)
-					if None == firstTime:
-						firstTime = time
-					time = vs.DmeTime_t(time -firstTime)
 					
 					modelName = dict.Read(file)
+					
+					visible = ReadBool(file)
+					
+					renderOrigin = ReadVector(file)
+					renderAngles = ReadQAngle(file)
 					
 					modelHandle = handleToLastModelHandle.get(handle, None)
 					
@@ -410,15 +395,34 @@ def ReadFile(fileName):
 						# Switched model, make old model invisible:
 						dagAnimSet = modelHandle.modelData
 						if dagAnimSet:
-							channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
-							rtime = time -channelsClip.timeFrame.start.GetValue()
+							rtime = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot))
 							MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', rtime, False)
 						
 						modelHandle = None
 						
 					if modelHandle is None:
-						objNr = objNr + 1
-						modelHandle = ModelHandle(objNr, handle, modelName)
+						
+						# Check if we can reuse s.th. and if not create new one:
+						
+						bestIndex = 0
+						bestLength = 0
+						
+						for idx,val in enumerate(unusedModelHandles):
+							if (val.modelName == modelName) and ((modelHandle is None) or (modelHandle.modelData and (modelHandle.lastRenderOrigin is not None) and ((modelHandle.lastRenderOrigin -renderOrigin).Length() < bestLength))):
+								modelHandle = val
+								bestLength = (modelHandle.lastRenderOrigin -renderOrigin).Length()
+								bestIndex = idx
+						
+						if modelHandle is not None:
+							# Use the one we found:
+							del unusedModelHandles[bestIndex]
+							print("Reusing %i (%s)." % (modelHandle.objNr,modelHandle.modelName))
+						else:
+							# If not then create a new one:
+							objNr = objNr + 1
+							modelHandle = ModelHandle(objNr, modelName)
+							print("Creating %i (%s)." % (modelHandle.objNr,modelHandle.modelName))
+						
 						handleToLastModelHandle[handle] = modelHandle
 					
 					dagAnimSet = modelHandle.modelData
@@ -427,7 +431,7 @@ def ReadFile(fileName):
 						dagName = modelName.rsplit('/',1)
 						dagName = dagName[len(dagName) -1]
 						dagName = (dagName[:60] + '..') if len(dagName) > 60 else dagName
-						dagName = "afx." +str(modelHandle.objNr)+"."+str(modelHandle.handle)+ " " + dagName
+						dagName = "afx." +str(modelHandle.objNr)+ " " + dagName
 						
 						dagAnimSet = sfmUtils.CreateModelAnimationSet(dagName,modelName)
 						
@@ -438,21 +442,14 @@ def ReadFile(fileName):
 						InitalizeAnimSet(dagAnimSet)
 						
 						modelHandle.modelData = dagAnimSet
-					
-					channelsClip = sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)
-					
-					time = time -channelsClip.timeFrame.start.GetValue()
 						
-					visible = True #visible = ReadBool(file)
+					modelHandle.lastRenderOrigin = renderOrigin
+					
+					time = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot))
 					
 					MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, visible)
 					
-					renderOrigin = ReadVector(file)
-					renderAngles = ReadQAngle(file)
-					
-					if True == visible:
-						# Only key-frame if visible
-						MakeKeyFrameTransform(channelCache, dagAnimSet, "rootTransform", time, renderOrigin, QuaternionFromQAngle(renderAngles), True)
+					MakeKeyFrameTransform(channelCache, dagAnimSet, "rootTransform", time, renderOrigin, QuaternionFromQAngle(renderAngles), True)
 					
 				if dict.Peekaboo(file,'baseanimating'):
 					#skin = ReadInt(file)
@@ -481,9 +478,7 @@ def ReadFile(fileName):
 								name = name[:name.find(')')]
 								#print name
 								
-								if True == visible:
-									# Only key-frame if visible
-									MakeKeyFrameTransform(channelCache, dagAnimSet, name, time, vec, quat)
+								MakeKeyFrameTransform(channelCache, dagAnimSet, name, time, vec, quat)
 				
 				dict.Peekaboo(file,'/')
 				
@@ -502,18 +497,13 @@ def ReadFile(fileName):
 					shot.scene.GetChild(shot.scene.FindChild("Cameras")).AddChild(dmeAfxCam)
 				
 				time = ReadFloat(file)
-				if None == firstTime:
-					firstTime = time
-				time = vs.DmeTime_t(time -firstTime)
 				
 				renderOrigin = ReadVector(file)
 				renderAngles = ReadQAngle(file)
 				fov = ReadFloat(file)
 				fov = fov / 180.0
 				
-				channelsClip = sfmUtils.GetChannelsClipForAnimSet(afxCam, shot)
-				
-				time = time -channelsClip.timeFrame.start.GetValue()
+				time = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(afxCam, shot))
 				
 				MakeKeyFrameValue(channelCache, afxCam, 'fieldOfView', time, fov)
 				MakeKeyFrameTransform(channelCache, afxCam, 'transform', time, renderOrigin, QuaternionFromQAngle(renderAngles), False, '_pos', '_rot')
@@ -523,7 +513,7 @@ def ReadFile(fileName):
 				return False
 	finally:
 		if file is not None:
-			file.Close()
+			file.close()
 	
 	return True
 
