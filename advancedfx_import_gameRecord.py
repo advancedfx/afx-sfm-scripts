@@ -1,7 +1,7 @@
 # Copyright (c) advancedfx.org
 #
 # Last changes:
-# 2017-09-14 dominik.matrixstorm.com
+# 2017-09-16 dominik.matrixstorm.com
 #
 # First changes:
 # 2016-07-13 dominik.matrixstorm.com
@@ -264,17 +264,20 @@ class ModelHandle:
 
 class AgrTimeConverter:
 	def __init__(self):
-		self.firstTime = None
+		self.time = 0
+		self.frameTime = 0
+		self.newTime = 0
 		
-	def Convert(self,time,channelsClip):
-		if self.firstTime is None:
-			self.firstTime = time
+	def Frame(self,frameTime):
+		self.time = self.newTime
+		self.frameTime = frameTime
 		
-		time = time -self.firstTime
 		
-		time = vs.DmeTime_t(time) -channelsClip.timeFrame.start.GetValue()
+	def FrameEnd(self):
+		self.newTime = self.time + self.frameTime
 		
-		return time
+	def GetTime(self,channelsClip):
+		return vs.DmeTime_t(self.time) -channelsClip.timeFrame.start.GetValue()
 
 def ReadFile(fileName):
 	file	 = None
@@ -292,7 +295,7 @@ def ReadFile(fileName):
 			SetError('Invalid file format.')
 			return False
 			
-		if 3 != version:
+		if 4 != version:
 			SetError('Version '+str(version)+' is not supported!')
 			return False
 
@@ -327,13 +330,16 @@ def ReadFile(fileName):
 			if node0 is None:
 				break
 				
-			elif 'afxHiddenOffset' == node0:
-				offset = ReadInt(file)
-				if offset:
+			elif 'afxFrame' == node0:
+				time = ReadFloat(file)
+				
+				timeConverter.Frame(time)
+			
+				afxHiddenOffset = ReadInt(file)
+				if afxHiddenOffset:
 					curOffset = file.tell()
-					file.seek(offset -4, 1)
+					file.seek(afxHiddenOffset -4, 1)
 					
-					time = ReadFloat(file)
 					numHidden = ReadInt(file)
 					for i in range(numHidden):
 						handle = ReadInt(file)
@@ -343,44 +349,41 @@ def ReadFile(fileName):
 							dagAnimSet = modelHandle.modelData
 							if dagAnimSet:
 								# Make ent invisible:
-								rtime = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot))
-								MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', rtime, False)
+								MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), False)
 							
 							unusedModelHandles.append(modelHandle)
 							#print("Marking %i (%s) as hidden/reusable." % (modelHandle.objNr,modelHandle.modelName))
 						
 					file.seek(curOffset,0)
+					
+			elif 'afxFrameEnd' == node0:
+				timeConverter.FrameEnd()
 				
 			elif 'afxHidden' == node0:
 				# skipped, because will be handled earlier by afxHiddenOffset
 				
-				time = ReadFloat(file)
 				numHidden = ReadInt(file)
 				for i in range(numHidden):
 					handle = ReadInt(file)
 		
 			elif 'deleted' == node0:
 				handle = ReadInt(file)
-				time = ReadFloat(file)
 				
 				modelHandle = handleToLastModelHandle.pop(handle, None)
 				if modelHandle is not None:
 					dagAnimSet = modelHandle.modelData
 					if dagAnimSet:
 						# Make removed ent invisible:
-						time = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot))
-						MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, False)
+						MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), False)
 						
 					unusedModelHandles.append(modelHandle)
 					print("Marking %i (%s) as hidden/reusable." % (modelHandle.objNr,modelHandle.modelName))
 			
 			elif 'entity_state' == node0:
 				visible = None
-				time = None
 				dagAnimSet = None
 				handle = ReadInt(file)
 				if dict.Peekaboo(file,'baseentity'):
-					time = ReadFloat(file)
 					
 					modelName = dict.Read(file)
 					
@@ -395,8 +398,7 @@ def ReadFile(fileName):
 						# Switched model, make old model invisible:
 						dagAnimSet = modelHandle.modelData
 						if dagAnimSet:
-							rtime = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot))
-							MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', rtime, False)
+							MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), False)
 						
 						modelHandle = None
 						
@@ -445,11 +447,9 @@ def ReadFile(fileName):
 						
 					modelHandle.lastRenderOrigin = renderOrigin
 					
-					time = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot))
+					MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), visible)
 					
-					MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', time, visible)
-					
-					MakeKeyFrameTransform(channelCache, dagAnimSet, "rootTransform", time, renderOrigin, QuaternionFromQAngle(renderAngles), True)
+					MakeKeyFrameTransform(channelCache, dagAnimSet, "rootTransform", timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), renderOrigin, QuaternionFromQAngle(renderAngles), True)
 					
 				if dict.Peekaboo(file,'baseanimating'):
 					#skin = ReadInt(file)
@@ -478,7 +478,7 @@ def ReadFile(fileName):
 								name = name[:name.find(')')]
 								#print name
 								
-								MakeKeyFrameTransform(channelCache, dagAnimSet, name, time, vec, quat)
+								MakeKeyFrameTransform(channelCache, dagAnimSet, name, timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), vec, quat)
 				
 				dict.Peekaboo(file,'/')
 				
@@ -496,17 +496,13 @@ def ReadFile(fileName):
 					scaled_fieldOfView_channel.fromElement.hi = 180
 					shot.scene.GetChild(shot.scene.FindChild("Cameras")).AddChild(dmeAfxCam)
 				
-				time = ReadFloat(file)
-				
 				renderOrigin = ReadVector(file)
 				renderAngles = ReadQAngle(file)
 				fov = ReadFloat(file)
 				fov = fov / 180.0
 				
-				time = timeConverter.Convert(time, sfmUtils.GetChannelsClipForAnimSet(afxCam, shot))
-				
-				MakeKeyFrameValue(channelCache, afxCam, 'fieldOfView', time, fov)
-				MakeKeyFrameTransform(channelCache, afxCam, 'transform', time, renderOrigin, QuaternionFromQAngle(renderAngles), False, '_pos', '_rot')
+				MakeKeyFrameValue(channelCache, afxCam, 'fieldOfView', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), fov)
+				MakeKeyFrameTransform(channelCache, afxCam, 'transform', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), renderOrigin, QuaternionFromQAngle(renderAngles), True, '_pos', '_rot')
 				
 			else:
 				SetError('Unknown packet: ')
