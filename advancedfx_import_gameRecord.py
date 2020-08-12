@@ -1,15 +1,6 @@
-# Copyright (c) advancedfx.org
-#
-# Last changes:
-# 2017-09-16 dominik.matrixstorm.com
-#
-# First changes:
-# 2016-07-13 dominik.matrixstorm.com
-
 
 # DEG2RAD = 0.0174532925199432957692369076849
 # PI = 3.14159265358979323846264338328
-
 
 import sfm
 import sfmUtils
@@ -155,7 +146,7 @@ def ReadVector(file):
 	if z is None:
 		return None
 	
-	if math.isinf(x) or math.isinf(y) or math.isinf(z):
+	if math.isinf(x) or math.isinf(y) or math.isinf(z) or math.isnan(x) or math.isnan(y) or math.isnan(z):
 		x = 0
 		y = 0
 		z = 0
@@ -173,7 +164,7 @@ def ReadQAngle(file):
 	if z is None:
 		return None
 		
-	if math.isinf(x) or math.isinf(y) or math.isinf(z):
+	if math.isinf(x) or math.isinf(y) or math.isinf(z) or math.isnan(x) or math.isnan(y) or math.isnan(z):
 		x = 0
 		y = 0
 		z = 0
@@ -194,7 +185,7 @@ def ReadQuaternion(file):
 	if w is None:
 		return None
 	
-	if math.isinf(x) or math.isinf(y) or math.isinf(z) or math.isinf(w):
+	if math.isinf(x) or math.isinf(y) or math.isinf(z) or math.isinf(w) or math.isnan(x) or math.isnan(y) or math.isnan(z) or math.isnan(w):
 		w = 1
 		x = 0
 		y = 0
@@ -255,6 +246,7 @@ class ModelHandle:
 		self.modelName = modelName
 		self.modelData = False
 		self.lastRenderOrigin = None
+		self.camera = None
 #
 #	def __hash__(self):
 #		return hash((self.handle, self.modelName))
@@ -295,7 +287,7 @@ def ReadFile(fileName):
 			SetError('Invalid file format.')
 			return False
 			
-		if 4 != version:
+		if 5 != version:
 			SetError('Version '+str(version)+' is not supported!')
 			return False
 
@@ -479,6 +471,29 @@ def ReadFile(fileName):
 								#print name
 								
 								MakeKeyFrameTransform(channelCache, dagAnimSet, name, timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), vec, quat)
+				
+				if dict.Peekaboo(file,'camera'):
+					thidPerson = ReadBool(file)
+					renderOrigin = ReadVector(file)
+					renderAngles = ReadQAngle(file)
+					fov = ReadFloat(file)
+					fov = fov / 180.0
+					
+					modelCamera = modelHandle.camera
+					if modelCamera is None:
+						camName = "camera."+str(modelHandle.objNr)
+						dmeAfxCam = vs.CreateElement( "DmeCamera", camName, shot.GetFileId())
+						modelCamera = sfm.CreateAnimationSet( camName, target=dmeAfxCam)
+						InitalizeAnimSet(modelCamera,makeVisibleChannel=False)
+						channelsClip = sfmUtils.GetChannelsClipForAnimSet(modelCamera, sfm.GetCurrentShot())
+						scaled_fieldOfView_channel = FindChannel(channelsClip.channels, "scaled_fieldOfView_channel")
+						scaled_fieldOfView_channel.fromElement.lo = 0
+						scaled_fieldOfView_channel.fromElement.hi = 180
+						shot.scene.GetChild(shot.scene.FindChild("Cameras")).AddChild(dmeAfxCam)
+						modelHandle.camera = modelCamera
+					
+					MakeKeyFrameValue(channelCache, modelCamera, 'fieldOfView', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), fov)
+					MakeKeyFrameTransform(channelCache, modelCamera, 'transform', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), renderOrigin, QuaternionFromQAngle(renderAngles), True, '_pos', '_rot')
 				
 				dict.Peekaboo(file,'/')
 				
