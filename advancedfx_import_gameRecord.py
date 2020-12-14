@@ -492,8 +492,8 @@ def ReadFile(fileName):
 						shot.scene.GetChild(shot.scene.FindChild("Cameras")).AddChild(dmeAfxCam)
 						modelHandle.camera = modelCamera
 					
-					MakeKeyFrameValue(channelCache, modelCamera, 'fieldOfView', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), fov)
-					MakeKeyFrameTransform(channelCache, modelCamera, 'transform', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), renderOrigin, QuaternionFromQAngle(renderAngles), True, '_pos', '_rot')
+					MakeKeyFrameValue(channelCache, modelCamera, 'fieldOfView', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(modelCamera, shot)), fov)
+					MakeKeyFrameTransform(channelCache, modelCamera, 'transform', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(modelCamera, shot)), renderOrigin, QuaternionFromQAngle(renderAngles), True, '_pos', '_rot')
 				
 				dict.Peekaboo(file,'/')
 				
@@ -516,8 +516,8 @@ def ReadFile(fileName):
 				fov = ReadFloat(file)
 				fov = fov / 180.0
 				
-				MakeKeyFrameValue(channelCache, afxCam, 'fieldOfView', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), fov)
-				MakeKeyFrameTransform(channelCache, afxCam, 'transform', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), renderOrigin, QuaternionFromQAngle(renderAngles), True, '_pos', '_rot')
+				MakeKeyFrameValue(channelCache, afxCam, 'fieldOfView', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(afxCam, shot)), fov)
+				MakeKeyFrameTransform(channelCache, afxCam, 'transform', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(afxCam, shot)), renderOrigin, QuaternionFromQAngle(renderAngles), True, '_pos', '_rot')
 				
 			else:
 				SetError('Unknown packet: ')
