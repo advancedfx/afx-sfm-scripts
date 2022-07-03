@@ -74,7 +74,14 @@ a custom (skin) model (modelName is '?' then).
 
 Changelog:
 
-1.7.1 (2020-12-14T18:18T):
+1.7.2 (2022-07-03T13:03Z):
+ - advancedfx_import_gameRecord:
+  - Updated to support AGR version 6.
+    Please note: AGR version 6 can express more than SFM in terms of matrices for models and model bones,
+    if the matrices can not be converted to vector position + quaternion rotation, then there will be
+    problems. E.g. mirrored (view) models would be a problem.
+
+1.7.1 (2020-12-14T18:18Z):
  - advancedfx_import_gameRecord:
   - Fixed error in script that could cause import to fail in some conditions.
 

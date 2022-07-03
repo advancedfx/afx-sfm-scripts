@@ -192,6 +192,19 @@ def ReadQuaternion(file):
 		z = 0
 	
 	return vs.Quaternion(x,y,z,w)
+	
+def ReadMatrix3x4(file):
+	mat = vs.mathlib.matrix3x4_t()
+	for i in range(3):
+		for j in range(4):
+			val = ReadFloat(file)
+			if val is None:
+				return None
+			if math.isinf(val):
+				val = 0
+			mat[i*4+j] = val
+	
+	return mat
 
 def ReadAgrVersion(file):
 	buf = file.read(14)
@@ -287,7 +300,7 @@ def ReadFile(fileName):
 			SetError('Invalid file format.')
 			return False
 			
-		if 5 != version:
+		if(5 != version and 6 != version):
 			SetError('Version '+str(version)+' is not supported!')
 			return False
 
@@ -381,8 +394,17 @@ def ReadFile(fileName):
 					
 					visible = ReadBool(file)
 					
-					renderOrigin = ReadVector(file)
-					renderAngles = ReadQAngle(file)
+					renderOrigin = vs.Vector(0,0,0)
+					renderRotation = vs.Quaternion(0,0,0,1)
+					
+					if version == 6:
+						matrix3x4 = ReadMatrix3x4(file)
+						vs.mathlib.MatrixPosition(matrix3x4,renderOrigin)
+						vs.mathlib.MatrixQuaternion(matrix3x4,renderRotation)
+					else:
+						renderOrigin = ReadVector(file)
+						renderAngles = ReadQAngle(file)
+						renderRotation = QuaternionFromQAngle(renderAngles)
 					
 					modelHandle = handleToLastModelHandle.get(handle, None)
 					
@@ -441,7 +463,7 @@ def ReadFile(fileName):
 					
 					MakeKeyFrameValue(channelCache, dagAnimSet, 'visible_channel', timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), visible)
 					
-					MakeKeyFrameTransform(channelCache, dagAnimSet, "rootTransform", timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), renderOrigin, QuaternionFromQAngle(renderAngles), True)
+					MakeKeyFrameTransform(channelCache, dagAnimSet, "rootTransform", timeConverter.GetTime(sfmUtils.GetChannelsClipForAnimSet(dagAnimSet, shot)), renderOrigin, renderRotation, True)
 					
 				if dict.Peekaboo(file,'baseanimating'):
 					#skin = ReadInt(file)
@@ -456,8 +478,15 @@ def ReadFile(fileName):
 						numBones = ReadInt(file)
 						
 						for i in xrange(numBones):
-							vec = ReadVector(file)
-							quat = ReadQuaternion(file)
+							vec = vs.Vector(0,0,0)
+							quat = vs.Quaternion(0,0,0,1)
+							if version == 6:
+								matrix3x4 = ReadMatrix3x4(file)
+								vs.mathlib.MatrixPosition(matrix3x4,vec)
+								vs.mathlib.MatrixQuaternion(matrix3x4,quat)
+							else:
+								vec = ReadVector(file)
+								quat = ReadQuaternion(file)
 							
 							if dagModel is None:
 								continue
